@@ -3,6 +3,6 @@
   buildCommand = "npm install && npm run build && npm run db:generate"
 
 [deploy]
-  startCommand = "npm run db:deploy && npm start"
+  startCommand = "sh start.sh"
   restartPolicyType = "on_failure"
   restartPolicyMaxRetries = 3
