@@ -48,6 +48,13 @@ app.use(helmet());
 const allowedOrigins = new Set<string>(
   env.APP_URL.split(',').map(url => url.trim())
 );
+
+// Dominios siempre permitidos (subdominios dinámicos de plataformas de deploy)
+const allowedPatterns = [
+  /\.netlify\.app$/,
+  /\.railway\.app$/,
+];
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -55,7 +62,9 @@ app.use(
       // Permitir llamadas server-to-server o curl (sin origin)
       if (!origin) return callback(null, true);
       if (allowedOrigins.has(origin)) return callback(null, true);
-      // permitir subrutas del mismo host si la URL trae trailing slash o sin slash
+      // Permitir subdominios dinámicos de Netlify, Railway, etc.
+      if (allowedPatterns.some(pattern => pattern.test(origin))) return callback(null, true);
+      // permitir subrutas del mismo host
       for (const o of allowedOrigins) {
         if (origin === o || origin.startsWith(o.replace(/\/$/, ''))) return callback(null, true);
       }
