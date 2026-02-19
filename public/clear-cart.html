@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Limpiar Carrito - Paso a Paso Shoes</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .info {
+            background: #d1ecf1;
+            border-left: 4px solid #0dcaf0;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            display: none;
+        }
+        button {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #c82333;
+        }
+        .storage-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .btn-back {
+            background: #6c757d;
+            margin-top: 10px;
+        }
+        .btn-back:hover {
+            background: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Limpiar Carrito de Compras</h1>
+        
+        <div class="warning">
+            <strong>⚠️ Problema Detectado:</strong><br>
+            Tu carrito contiene productos que ya no existen en la base de datos.
+            Esto causa errores al intentar finalizar la compra.
+        </div>
+
+        <div class="info">
+            <strong>ℹ️ Estado Actual del LocalStorage:</strong>
+            <div id="storage-status" class="storage-info">
+                Cargando...
+            </div>
+        </div>
+
+        <div class="success" id="success-message">
+            <strong>✅ ¡Listo!</strong><br>
+            El carrito ha sido limpiado correctamente. Ya podés agregar nuevos productos.
+        </div>
+
+        <button onclick="clearCart()">🗑️ Limpiar Carrito Ahora</button>
+        <button class="btn-back" onclick="window.location.href='http://localhost:3000'">
+            ← Volver al Inicio
+        </button>
+
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+            <h3>📝 También podés limpiar desde la consola del navegador:</h3>
+            <div class="storage-info">
+                // Abrí DevTools (F12) y ejecutá:<br>
+                localStorage.removeItem('cart-storage');<br>
+                window.location.reload();
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updateStorageStatus() {
+            const cartStorage = localStorage.getItem('cart-storage');
+            const authStorage = localStorage.getItem('auth-storage');
+            
+            let statusHTML = '';
+            
+            if (cartStorage) {
+                try {
+                    const cart = JSON.parse(cartStorage);
+                    const itemCount = cart.state?.items?.length || 0;
+                    statusHTML += `<strong>Carrito:</strong> ${itemCount} producto(s)<br>`;
+                    
+                    if (itemCount > 0) {
+                        statusHTML += '<br><em>Productos en el carrito:</em><br>';
+                        cart.state.items.forEach((item, index) => {
+                            statusHTML += `  ${index + 1}. ${item.producto?.nombre || 'Desconocido'} - ID: ${item.producto?.id}<br>`;
+                        });
+                    }
+                } catch (e) {
+                    statusHTML += '<strong>Carrito:</strong> Error al leer datos<br>';
+                }
+            } else {
+                statusHTML += '<strong>Carrito:</strong> Vacío ✅<br>';
+            }
+            
+            if (authStorage) {
+                try {
+                    const auth = JSON.parse(authStorage);
+                    const userName = auth.state?.user?.nombre || 'Usuario';
+                    statusHTML += `<br><strong>Usuario:</strong> ${userName} (sesión activa)`;
+                } catch (e) {
+                    statusHTML += '<br><strong>Usuario:</strong> Error al leer datos';
+                }
+            } else {
+                statusHTML += '<br><strong>Usuario:</strong> No autenticado';
+            }
+            
+            document.getElementById('storage-status').innerHTML = statusHTML;
+        }
+
+        function clearCart() {
+            if (confirm('¿Estás seguro de que querés limpiar el carrito?\n\nEsta acción no se puede deshacer.')) {
+                // Limpiar solo el carrito, mantener la autenticación
+                localStorage.removeItem('cart-storage');
+                
+                // Mostrar mensaje de éxito
+                document.getElementById('success-message').style.display = 'block';
+                
+                // Actualizar el estado
+                updateStorageStatus();
+                
+                // Opcional: recargar la página después de 2 segundos
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            }
+        }
+
+        // Actualizar al cargar la página
+        updateStorageStatus();
+
+        // Actualizar cada 2 segundos para detectar cambios
+        setInterval(updateStorageStatus, 2000);
+    </script>
+</body>
+</html>

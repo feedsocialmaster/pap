@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import * as ctrl from '../controllers/products.controller.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
+const router = Router();
+router.get('/', ctrl.list);
+router.get('/:id', ctrl.getOne);
+router.post('/', requireAuth, requireRole('ADMIN_CMS', 'SUPER_SU'), ctrl.create);
+router.put('/:id', requireAuth, requireRole('ADMIN_CMS', 'SUPER_SU'), ctrl.update);
+router.delete('/:id', requireAuth, requireRole('ADMIN_CMS', 'SUPER_SU'), ctrl.remove);
+export default router;

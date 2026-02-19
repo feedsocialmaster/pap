@@ -1,0 +1,752 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+
+}
+
+model User {
+  id                                         String              @id @default(cuid())
+  email                                      String              @unique
+  passwordHash                               String
+  nombre                                     String
+  apellido                                   String
+  fechaNacimiento                            DateTime
+  telefono                                   String?
+  whatsapp                                   String?
+  direccion                                  Json?
+  role                                       Role                @default(CLIENTA)
+  fechaRegistro                              DateTime            @default(now())
+  activo                                     Boolean             @default(true)
+  fechaSuspension                            DateTime?
+  motivoSuspension                           String?
+  suspendido                                 Boolean             @default(false)
+  username                                   String?             @unique
+  emailVerified                              Boolean             @default(false) @map("email_verified")
+  verificationToken                          String?             @map("verification_token")
+  verificationTokenExpires                   DateTime?           @map("verification_token_expires")
+  lastPasswordChange                         DateTime?           @map("last_password_change") /// Fecha del último cambio de contraseña
+  passwordResetToken                         String?             @map("password_reset_token") /// Token para recuperar contraseña
+  passwordResetExpires                       DateTime?           @map("password_reset_expires") /// Expiración del token de reset
+  auditLogs                                  CMSAuditLog[]
+
+  orders                                     Order[]
+
+  @@index([activo])
+  @@index([suspendido])
+  @@index([verificationToken])
+  @@index([emailVerified])
+}
+
+model Product {
+  id                  String            @id @default(cuid())
+  codigoProducto      String?           @unique @map("codigo_producto") /// Código amigable visible: 000001-PROD, 000002-PROD
+  nombre              String
+  slug                String            @unique
+  descripcion         String
+  precio              Int
+  tipoCalzado         TipoCalzado
+  talles              Int[]
+  colores             Json?             /// Array of hex color codes: ["#RRGGBB", "#RRGGBB", ...] - LEGACY: use variants instead
+  stock               Int               @default(0) /// LEGACY: total stock calculated from variants
+  stockTotal          Int               @default(0) @map("stock_total") /// Auto-calculated: SUM(variants.stock)
+  enLiquidacion       Boolean           @default(false)
+  porcentajeDescuento Int?
+  esFiesta            Boolean           @default(false)
+  impermeable         Boolean           @default(false)
+  antideslizante      Boolean           @default(false)
+  caracteristicas     String[]          @default([])
+  retiroEnLocal       Boolean           @default(false) @map("retiro_en_local")
+  envioNacional       Boolean           @default(false) @map("envio_nacional")
+  envioLocal          Boolean           @default(false) @map("envio_local")
+  productoEnLanzamiento Boolean         @default(false) @map("producto_en_lanzamiento")
+  metodosPago         Json?             @map("metodos_pago") /// { tarjetas: string[], transferenciaBancaria: boolean, mercadoPago: boolean, otros: string[] }
+  aplicaPromocion     Boolean           @default(false) @map("aplica_promocion")
+  tipoPromocionAplica String?           @map("tipo_promocion_aplica")
+  fechaCreacion       DateTime          @default(now())
+  categoryId          String?           @map("category_id")
+  orderItems          OrderItem[]
+  imagenes            ProductImage[]
+  variants            ProductVariant[]
+  category            Category?         @relation("ProductCategory", fields: [categoryId], references: [id])
+
+  @@index([tipoCalzado])
+  @@index([fechaCreacion])
+  @@index([categoryId])
+}
+
+model ProductVariant {
+  id         String   @id @default(cuid())
+  productId  String   @map("product_id")
+  colorName  String   @map("color_name")
+  colorCode  String   @map("color_code") /// Hex color code: #RRGGBB
+  size       Int      /// Talle del producto
+  stock      Int      @default(0)
+  sku        String?  /// Optional: variant-specific SKU
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, colorCode, size])
+  @@index([productId])
+  @@index([stock])
+  @@map("product_variants")
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  url       String
+  alt       String?
+  productId String
+  orden     Int     @default(0)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model Category {
+  id                                    String    @id @default(cuid())
+  name                                  String
+  slug                                  String    @unique
+  description                           String?
+  parentId                              String?   @map("parent_id")
+  orden                                 Int       @default(0)
+  activo                                Boolean   @default(true)
+  createdAt                             DateTime  @default(now()) @map("created_at")
+  updatedAt                             DateTime  @updatedAt @map("updated_at")
+  parent                                Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children                              Category[] @relation("CategoryHierarchy")
+  products                              Product[] @relation("ProductCategory")
+
+  @@index([parentId])
+  @@index([activo])
+  @@index([slug])
+}
+
+model Order {
+  id                   String               @id @default(cuid())
+  numeroOrden          String               @unique
+  fecha                DateTime             @default(now())
+  usuarioId            String
+  subtotal             Int
+  total                Int
+  estado               EstadoOrden          @default(EN_PROCESO)
+  metodoPago           Json
+  direccionEnvio       Json?
+  confirmoRecepcion    Boolean              @default(false)
+  estadoEntrega        EstadoEntrega        @default(PREPARANDO)
+  fechaConfirmacion    DateTime?
+  fechaUltimoIntento   DateTime?
+  intentosEntrega      Int                  @default(0)
+  motivoNoEntrega      String?
+  notasInternas        String?
+  deliveryReason       String?
+  deliveredAt          DateTime?
+  cmsStatus            CMSOrderStatus       @default(PENDING)
+  version              Int                  @default(1)
+  fulfillmentType      String?              @default("shipping") @map("fulfillment_type") /// 'shipping' or 'pickup'
+  pickupLocationId     String?              @map("pickup_location_id")
+  isCollected          Boolean?             @default(false) @map("is_collected")
+  collectedAt          DateTime?            @map("collected_at")
+  paymentMethodDetail  String?              @map("payment_method_detail") /// tarjeta, transferencia, efectivo, etc.
+  installments         Int?                 @default(1) @map("installments") /// Cuotas de pago (1, 3, 6, 9, 12)
+  paymentApprovedAt    DateTime?            @map("payment_approved_at")
+  preparingStartedAt   DateTime?            @map("preparing_started_at")
+  readyForShippingAt   DateTime?            @map("ready_for_shipping_at")
+  readyForPickupAt     DateTime?            @map("ready_for_pickup_at")
+  shippedAt            DateTime?            @map("shipped_at")
+  trackingNumber       String?              @map("tracking_number")
+  courierName          String?              @map("courier_name")
+  shippingNotes        String?              @map("shipping_notes") /// Notas de envío visibles para el cliente
+  cancellationReason   String?              @map("cancellation_reason")
+  facturaUrl           String?              @map("factura_url") /// URL del PDF de factura subido desde CMS
+  gatewayPayments      GatewayPayment[]
+  usuario              User                 @relation(fields: [usuarioId], references: [id])
+  items                OrderItem[]
+  historialEstados     OrderStatusHistory[]
+  payment              Payment?
+
+  @@index([usuarioId])
+  @@index([estado])
+  @@index([estadoEntrega])
+  @@index([cmsStatus])
+  @@index([fecha])
+  @@index([fulfillmentType])
+  @@index([cmsStatus, fulfillmentType])
+  @@index([paymentApprovedAt])
+  @@index([shippedAt])
+  @@index([deliveredAt])
+  @@index([trackingNumber])
+}
+
+model OrderItem {
+  id               String  @id @default(cuid())
+  orderId          String
+  productId        String
+  cantidad         Int
+  talle            Int
+  color            String?
+  precioUnitario   Int
+  precioOriginal   Int?    @map("precio_original") /// Precio antes de descuentos
+  descuentoMonto   Int?    @map("descuento_monto") /// Monto del descuento en centavos
+  promocionId      String? @map("promocion_id") /// ID de CMSPromocion aplicada
+  promocionNombre  String? @map("promocion_nombre") /// Nombre de la promoción para mostrar
+  order            Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product          Product @relation(fields: [productId], references: [id])
+}
+
+model OrderStatusHistory {
+  id             String         @id @default(cuid())
+  orderId        String
+  estadoAnterior EstadoEntrega?
+  estadoNuevo    EstadoEntrega
+  cambiadoPor    String
+  notas          String?
+  createdAt      DateTime       @default(now())
+  order          Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model OrderAudit {
+  id               String    @id @default(cuid())
+  orderId          String
+  changedBy        String
+  changedByEmail   String?
+  action           String
+  previousStatus   String?
+  newStatus        String?
+  deliveryReason   String?
+  notes            String?
+  metadata         Json?
+  createdAt        DateTime  @default(now())
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@index([changedBy])
+}
+
+model Payment {
+  id           String        @id @default(cuid())
+  provider     String        @default("mercadopago")
+  status       PaymentStatus @default(PENDING)
+  preferenceId String?
+  paymentId    String?
+  orderId      String        @unique
+  raw          Json?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  order        Order         @relation(fields: [orderId], references: [id])
+}
+
+model Promotion {
+  id           String   @id @default(cuid())
+  titulo       String
+  descripcion  String
+  imagen       String
+  imagenMobile String?
+  enlace       String?
+  activo       Boolean  @default(true)
+  orden        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CMSBlogPost {
+  id             Int            @id @default(autoincrement())
+  titulo         String
+  tituloSeo      String?
+  slug           String         @unique
+  slugSeo        String?
+  descripcion    String
+  descripcionSeo String?
+  palabrasClave  String[]       @default([])
+  autor          String
+  miniatura      String?
+  cuerpo         String
+  estado         EstadoBlogPost @default(BORRADOR)
+  /// @deprecated Scheduling functionality removed - field kept for backwards compatibility, always null
+  programadoPara DateTime?
+  publicadoEn    DateTime?
+  vistas         Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([slug])
+  @@index([estado])
+  @@index([publicadoEn])
+}
+
+model CMSRecursoUtil {
+  id          String      @id @default(cuid())
+  titulo      String
+  descripcion String
+  tipo        TipoRecurso
+  contenido   String
+  archivo     String?
+  icono       String?
+  orden       Int         @default(0)
+  activo      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model CMSNotificacion {
+  id            String                @id @default(cuid())
+  titulo        String
+  mensaje       String
+  tipo          TipoNotificacion
+  prioridad     PrioridadNotificacion @default(NORMAL)
+  destinatarios String[]
+  programada    DateTime?
+  enviada       Boolean               @default(false)
+  fechaEnvio    DateTime?
+  createdAt     DateTime              @default(now())
+}
+
+model CMSPromoBancaria {
+  id          String   @id @default(cuid())
+  banco       String
+  logoUrl     String
+  beneficio   String
+  descripcion String
+  fechaInicio DateTime
+  fechaFin    DateTime
+  activo      Boolean  @default(true)
+  orden       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model CMSSucursal {
+  id                 String   @id @default(cuid())
+  nombre             String
+  direccion          String
+  ciudad             String
+  telefono           String
+  email              String
+  horarios           Json
+  horariosEspeciales Json?
+  mapsUrl            String?
+  coordenadas        Json?
+  activo             Boolean  @default(true)
+  orden              Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model CMSTestimonio {
+  id           String   @id @default(cuid())
+  nombre       String
+  fotoUrl      String?
+  texto        String
+  calificacion Int      @default(5)
+  ubicacion    String?
+  destacado    Boolean  @default(false)
+  activo       Boolean  @default(true)
+  orden        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CMSContenidoPagina {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  titulo    String
+  contenido String
+  seo       Json?
+  activo    Boolean  @default(true)
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+
+model CMSPromocion {
+  id                     String             @id @default(cuid())
+  titulo                 String
+  descripcion            String
+  slug                   String             @unique
+  imagenUrl              String?
+  tipoDescuento          TipoDescuentoPromo
+  valorDescuento         Int
+  leyendaPersonalizada   String?            @map("leyenda_personalizada")
+  fechaInicio            DateTime
+  fechaFin               DateTime
+  activo                 Boolean            @default(true)
+  compraMinima           Int?
+  productosAplicables    String[]
+  tiposCalzadoAplicables String[]
+  usosMaximos            Int?
+  usosActuales           Int                @default(0)
+  usosPorUsuario         Int?
+  destacado              Boolean            @default(false)
+  orden                  Int                @default(0)
+  colorFondo             String?
+  colorTexto             String?
+  exclusivaConCodigos    Boolean            @default(false) @map("exclusiva_con_codigos")
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  createdBy              String?
+
+  @@index([activo])
+  @@index([fechaInicio])
+  @@index([fechaFin])
+  @@index([destacado])
+}
+
+model CMSUsoPromocion {
+  id                String   @id @default(cuid())
+  promocionId       String
+  usuarioId         String
+  ordenId           String
+  descuentoAplicado Int
+  createdAt         DateTime @default(now())
+
+  @@index([promocionId])
+  @@index([usuarioId])
+  @@index([ordenId])
+}
+
+model CMSCodigoPromocional {
+  id                       String        @id @default(cuid())
+  codigo                   String        @unique
+  descuento                Int?          // Nullable - puede ser null si solo hay bundle
+  tipoDescuento            TipoDescuento @default(PORCENTAJE)
+  tipoBundle               TipoBundle?   @map("tipo_bundle")
+  combinable               Boolean       @default(false) // Si true, aplica bundle+% cuando ambos existen
+  exclusivoConPromociones  Boolean       @default(false) @map("exclusivo_con_promociones")
+  activo                   Boolean       @default(true)
+  fechaInicio              DateTime?
+  fechaFin                 DateTime?
+  usosMaximos              Int?
+  usosActuales             Int           @default(0)
+  usuariosPermitidos       String[]      @default([])
+  descripcion              String?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+
+  @@index([codigo])
+  @@index([activo])
+}
+
+model CMSAuditLog {
+  id        String   @id @default(cuid())
+  usuarioId String
+  accion    String
+  entidad   String
+  entidadId String
+  cambios   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  usuario   User     @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId])
+  @@index([entidad])
+  @@index([createdAt])
+}
+
+
+
+model CMSNotification {
+  id             String             @id @default(cuid())
+  type           NotificationType
+  payload        Json
+  recipientRole  String             @default("cms_admin")
+  status         NotificationStatus @default(UNREAD)
+  relatedOrderId String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  readAt         DateTime?
+
+  @@index([status])
+  @@index([recipientRole])
+  @@index([createdAt])
+  @@index([relatedOrderId])
+}
+
+model PaymentGateway {
+  id              String           @id @default(cuid())
+  name            String
+  provider        GatewayProvider
+  mode            GatewayMode      @default(SANDBOX)
+  configEncrypted String
+  webhookUrl      String?
+  feesFixed       Int              @default(0)
+  feesPercent     Float            @default(0)
+  active          Boolean          @default(true)
+  priority        Int              @default(0)
+  createdBy       String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  logs            GatewayLog[]
+  payments        GatewayPayment[]
+  rules           GatewayRule[]
+
+  @@index([active])
+  @@index([provider])
+  @@index([createdBy])
+}
+
+model GatewayRule {
+  id          String         @id @default(cuid())
+  gatewayId   String
+  scopeType   RuleScope
+  scopeId     String?
+  action      RuleAction
+  amount      Int?
+  percent     Float?
+  priority    Int            @default(0)
+  active      Boolean        @default(true)
+  description String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  gateway     PaymentGateway @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+
+  @@index([gatewayId])
+  @@index([scopeType])
+  @@index([scopeId])
+  @@index([active])
+}
+
+model GatewayPayment {
+  id                String               @id @default(cuid())
+  orderId           String
+  gatewayId         String
+  externalId        String?
+  externalReference String?
+  amount            Int
+  currency          String               @default("ARS")
+  status            GatewayPaymentStatus @default(PENDING)
+  metadata          Json?
+  errorMessage      String?
+  checkoutUrl       String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  gateway           PaymentGateway       @relation(fields: [gatewayId], references: [id])
+  order             Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([gatewayId])
+  @@index([externalId])
+  @@index([status])
+}
+
+model GatewayLog {
+  id           String         @id @default(cuid())
+  gatewayId    String
+  action       String
+  request      Json?
+  response     Json?
+  statusCode   Int?
+  success      Boolean        @default(false)
+  errorMessage String?
+  executedBy   String?
+  createdAt    DateTime       @default(now())
+  gateway      PaymentGateway @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+
+  @@index([gatewayId])
+  @@index([createdAt])
+  @@index([success])
+}
+
+enum Role {
+  CLIENTA
+  DUENA
+  DESARROLLADOR
+  GERENTE_COMERCIAL
+  ADMIN_CMS
+  VENDEDOR
+  SUPER_SU
+}
+
+enum EstadoOrden {
+  EN_PROCESO
+  ENTREGADO
+  CANCELADO
+}
+
+enum EstadoEntrega {
+  PREPARANDO
+  EN_CAMINO
+  ENTREGADO
+  VISITADO_NO_ENTREGADO
+  RETIRO_EN_LOCAL
+  CANCELADO
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TipoCalzado {
+  Zapatillas
+  Sandalias
+  Botas
+  Stilettos
+  Chatitas
+  Plataformas
+}
+
+enum TipoRecurso {
+  GUIA
+  TUTORIAL
+  DOCUMENTO
+  VIDEO
+  ENLACE
+}
+
+enum TipoNotificacion {
+  INFO
+  PROMOCION
+  ALERTA
+  SISTEMA
+}
+
+enum PrioridadNotificacion {
+  BAJA
+  NORMAL
+  ALTA
+  URGENTE
+}
+
+enum EstadoBlogPost {
+  BORRADOR
+  /// @deprecated Scheduling functionality removed - kept for backwards compatibility
+  PROGRAMADO
+  PUBLICADO
+  ARCHIVADO
+}
+
+enum TipoDescuentoPromo {
+  PORCENTAJE
+  DOS_POR_UNO
+}
+
+enum TipoBundle {
+  DOS_POR_UNO     // 2x1 - Paga 1, lleva 2
+  TRES_POR_DOS   // 3x2 - Paga 2, lleva 3
+  CUATRO_POR_TRES // 4x3 - Paga 3, lleva 4
+  CINCO_POR_DOS  // 5x2 - Paga 2, lleva 5
+  CINCO_POR_TRES // 5x3 - Paga 3, lleva 5
+}
+
+enum TipoDescuento {
+  PORCENTAJE
+  MONTO_FIJO
+}
+
+enum GatewayProvider {
+  MERCADOPAGO
+  TRANSFERENCIA
+  TARJETA_CREDITO
+  TARJETA_DEBITO
+  PAYPAL
+  STRIPE
+  OTRO
+}
+
+enum GatewayMode {
+  SANDBOX
+  PRODUCTION
+}
+
+enum RuleScope {
+  PRODUCT
+  CATEGORY
+  GLOBAL
+}
+
+enum RuleAction {
+  CHARGE
+  DISCOUNT
+}
+
+enum GatewayPaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum CMSOrderStatus {
+  PENDING              // Pedido creado, esperando pago
+  PAYMENT_REJECTED     // Pago rechazado
+  PAYMENT_APPROVED     // Pago aprobado, listo para preparar (antes: ACCEPTED)
+  PREPARING            // Preparando pedido
+  READY_FOR_SHIPPING   // Listo para envío (shipping only)
+  READY_FOR_PICKUP     // Listo para retiro (pickup only)
+  IN_TRANSIT           // En camino al cliente (shipping only)
+  DELIVERED            // Entregado
+  NOT_DELIVERED        // No pudo ser entregado
+  CANCELLED            // Pedido cancelado
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+}
+
+enum NotificationType {
+  ORDER_CREATED
+  ORDER_UPDATED
+  ORDER_DELIVERED
+  ORDER_CANCELLED
+  PAYMENT_RECEIVED
+  SYSTEM_ALERT
+}
+// ============================================
+// Site Content Management (CMS Editable Pages)
+// ============================================
+
+/// Contenido editable del sitio (páginas estáticas)
+model SiteContent {
+  id        String   @id @default(cuid())
+  key       String   /// Clave única: "home_body", "about_us", "faq", "terms", etc.
+  locale    String   @default("es-AR") /// Idioma del contenido
+  title     String?  /// Título de la sección (opcional)
+  content   String   @db.Text /// HTML o Markdown sanitizado
+  metadata  Json?    /// { "editor": "wysiwyg", "lastEditBy": "userId", etc. }
+  version   Int      @default(1) /// Incremento por cada guardado (optimistic concurrency)
+  published Boolean  @default(true) /// Si está publicado o es draft
+  updatedBy String?  @map("updated_by") /// ID del usuario que realizó la última actualización
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  versions  SiteContentVersion[]
+
+  @@unique([key, locale])
+  @@index([key])
+  @@index([locale])
+  @@index([published])
+  @@map("site_contents")
+}
+
+/// Historial de versiones de contenido para audit trail y rollback
+model SiteContentVersion {
+  id            String   @id @default(cuid())
+  siteContentId String   @map("site_content_id")
+  version       Int      /// Número de versión
+  content       String   @db.Text /// Contenido en esa versión
+  title         String?  /// Título en esa versión
+  diff          String?  @db.Text /// Diff opcional para audit trail
+  createdBy     String?  @map("created_by") /// ID del usuario que creó esta versión
+  createdByName String?  @map("created_by_name") /// Nombre del usuario para mostrar
+  createdAt     DateTime @default(now()) @map("created_at")
+  changeReason  String?  @map("change_reason") /// Razón del cambio (opcional)
+
+  siteContent   SiteContent @relation(fields: [siteContentId], references: [id], onDelete: Cascade)
+
+  @@unique([siteContentId, version])
+  @@index([siteContentId])
+  @@index([createdAt])
+  @@map("site_content_versions")
+}

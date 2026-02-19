@@ -1,0 +1,83 @@
+============================================================
+  ENV_NOTICE.txt — Paso a Paso Shoes
+  INSTRUCCIONES PARA CONFIGURAR VARIABLES DE ENTORNO EN EL VPS
+============================================================
+
+IMPORTANTE: Este repositorio NO contiene credenciales reales.
+Debes crear DOS archivos de entorno en el servidor antes de iniciar la app:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 1. ARCHIVO: .env.local  (en la raíz del proyecto — Frontend Next.js)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Crear el archivo en: /var/www/pasoapaso/.env.local
+(o donde esté el root del proyecto Next.js)
+
+────────────────────────────────────────────────────────────
+# URL pública de tu API backend (mismo VPS, puerto 3001)
+NEXT_PUBLIC_API_URL=https://TU_DOMINIO/api
+
+# Sentry (opcional — dejar vacío si no se usa)
+NEXT_PUBLIC_SENTRY_DSN=
+
+# Node env
+NODE_ENV=production
+────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 2. ARCHIVO: server/.env  (en la carpeta server/ — Backend Express)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Crear el archivo en: /var/www/pasoapaso/server/.env
+
+────────────────────────────────────────────────────────────
+NODE_ENV=production
+PORT=3001
+
+# URL base del backend (interno o público según reverse proxy)
+API_URL=https://TU_DOMINIO/api
+APP_URL=https://TU_DOMINIO
+
+# ── Base de datos PostgreSQL ──────────────────────────────
+# Formato: postgresql://USUARIO:PASSWORD@HOST:PUERTO/DB_NAME?schema=public
+DATABASE_URL=postgresql://USUARIO:PASSWORD@localhost:5432/pasoapaso?schema=public
+
+# ── JWT ───────────────────────────────────────────────────
+# Generar con: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+JWT_SECRET=CAMBIAR_POR_SECRETO_ALEATORIO_FUERTE_64_CHARS
+
+# ── Mercado Pago ──────────────────────────────────────────
+# Obtener en: https://www.mercadopago.com.ar/developers/es/docs
+# Usar ACCESS TOKEN de PRODUCCIÓN (no TEST-)
+MP_ACCESS_TOKEN=APP_USR-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+MP_WEBHOOK_SECRET=SECRETO_WEBHOOK_OPCIONAL
+
+# ── Email SMTP (requerido para emails transaccionales) ────
+EMAIL_HOST=smtp.hostinger.com
+EMAIL_PORT=587
+EMAIL_USER=noreply@TU_DOMINIO
+EMAIL_PASS=TU_PASSWORD_SMTP
+EMAIL_FROM=Paso a Paso Shoes <noreply@TU_DOMINIO>
+CONTACT_EMAIL=contacto@TU_DOMINIO
+
+# ── Sentry (opcional) ─────────────────────────────────────
+SENTRY_DSN=
+────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ NOTAS DE SEGURIDAD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• Nunca subas .env.local ni server/.env a ningún repositorio.
+• Establece permisos: chmod 600 .env.local server/.env
+• JWT_SECRET debe tener mínimo 64 caracteres aleatorios.
+• MP_ACCESS_TOKEN en producción empieza con APP_USR-, no TEST-.
+• DATABASE_URL: asegúrate de que el usuario PostgreSQL tenga
+  permisos CREATEDB o que la base de datos ya exista.
+
+Archivos detectados con POSIBLES SECRETOS y EXCLUIDOS del deploy:
+  - .env.local               (credenciales reales del frontend)
+  - server/.env              (credenciales reales del backend)
+============================================================

@@ -1,0 +1,390 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { ShoppingCart, Trash2, Plus, Minus, ChevronRight, Tag, Gift } from 'lucide-react';
+import { useCartStore } from '@/store/cartStore';
+import { useAuthStore } from '@/store/authStore';
+import { formatPrice, getProductUrl } from '@/utils/format';
+import Button from '@/components/ui/Button';
+import axios from '@/lib/axios';
+
+export default function CarritoPage() {
+  const router = useRouter();
+  const { items, getTotalItems, getSubtotal, updateQuantity, removeItem, clearCart } = useCartStore();
+  const { isAuthenticated, user } = useAuthStore();
+  
+  const [codigoCupon, setCodigoCupon] = useState('');
+  const [cuponAplicado, setCuponAplicado] = useState<{
+    codigo: string;
+    descuento: number;
+    tipoDescuento: 'PORCENTAJE' | 'MONTO_FIJO';
+    descripcion?: string;
+  } | null>(null);
+  const [validandoCupon, setValidandoCupon] = useState(false);
+  const [cuponesDisponibles, setCuponesDisponibles] = useState<any[]>([]);
+  const [mostrarCupones, setMostrarCupones] = useState(false);
+
+  const subtotal = getSubtotal();
+  
+  // Calcular descuento de cupón
+  let descuentoCupon = 0;
+  if (cuponAplicado) {
+    if (cuponAplicado.tipoDescuento === 'PORCENTAJE') {
+      descuentoCupon = (subtotal * cuponAplicado.descuento) / 100;
+    } else {
+      descuentoCupon = cuponAplicado.descuento;
+    }
+  }
+  
+  const total = Math.max(0, subtotal - descuentoCupon);
+
+  // Cargar cupones exclusivos del usuario
+  useEffect(() => {
+    const cargarCuponesExclusivos = async () => {
+      if (!isAuthenticated || !user) return;
+
+      try {
+        const response = await axios.get('/my/perfil/beneficios-exclusivos');
+        if (response.data.cupones) {
+          // Filtrar solo cupones activos y válidos
+          const cuponesValidos = response.data.cupones.filter((cupon: any) => {
+            const ahora = new Date();
+            const vigente = (!cupon.fechaFin || new Date(cupon.fechaFin) > ahora) &&
+                           (!cupon.fechaInicio || new Date(cupon.fechaInicio) <= ahora);
+            return cupon.activo && vigente;
+          });
+          setCuponesDisponibles(cuponesValidos);
+        }
+      } catch (error) {
+        console.error('Error al cargar cupones exclusivos:', error);
+      }
+    };
+
+    cargarCuponesExclusivos();
+  }, [isAuthenticated, user]);
+
+  const aplicarCupon = async () => {
+    if (!codigoCupon.trim()) {
+      alert('Por favor ingresa un código de cupón');
+      return;
+    }
+
+    try {
+      setValidandoCupon(true);
+      const response = await axios.get(`/cms/cupones/validar/${codigoCupon.toUpperCase().trim()}`);
+
+      setCuponAplicado({
+        codigo: response.data.codigo,
+        descuento: response.data.descuento,
+        tipoDescuento: response.data.tipoDescuento,
+        descripcion: response.data.descripcion
+      });
+      
+      const descuentoTexto = response.data.tipoDescuento === 'PORCENTAJE' 
+        ? `${response.data.descuento}%`
+        : formatPrice(response.data.descuento);
+      alert(`¡Cupón aplicado! ${descuentoTexto} de descuento`);
+    } catch (error: any) {
+      console.error('Error al validar cupón:', error);
+      const mensaje = error.response?.data?.error || 'Cupón inválido o expirado';
+      alert(mensaje);
+      setCuponAplicado(null);
+    } finally {
+      setValidandoCupon(false);
+    }
+  };
+
+  const removerCupon = () => {
+    setCuponAplicado(null);
+    setCodigoCupon('');
+  };
+
+  const procederAlPago = () => {
+    if (items.length === 0) {
+      alert('Tu carrito está vacío');
+      return;
+    }
+    router.push('/checkout');
+  };
+
+  if (items.length === 0) {
+    return (
+      <div className="min-h-[calc(100vh-200px)] flex items-center justify-center py-16 mt-16">
+        <div className="max-w-2xl mx-auto text-center">
+          <div className="w-32 h-32 mx-auto mb-6 bg-gray-light rounded-full flex items-center justify-center">
+            <ShoppingCart size={64} className="text-gray" />
+          </div>
+          <h1 className="text-3xl font-bold text-dark mb-4">Tu carrito está vacío</h1>
+          <p className="text-gray mb-8">
+            Descubrí nuestra colección de calzado femenino y comenzá a comprar
+          </p>
+          <Button onClick={() => router.push('/tienda')}>
+            Ir a la tienda
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container-custom py-8">
+      {/* Header */}
+      <div className="mb-8 mt-16">
+        <h1 className="text-3xl font-bold text-dark flex items-center gap-3">
+          <ShoppingCart className="text-primary" size={32} />
+          Mi Carrito ({getTotalItems()} {getTotalItems() === 1 ? 'producto' : 'productos'})
+        </h1>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Columna Izquierda: Productos */}
+        <div className="lg:col-span-2 space-y-4">
+          {items.map((item) => {
+            // Obtener la primera imagen (puede ser string o objeto)
+            const primeraImagen = item.producto.imagenes?.[0];
+            const imagenUrl = typeof primeraImagen === 'string' 
+              ? primeraImagen 
+              : primeraImagen?.url || '/placeholder-product.jpg';
+            
+            return (
+            <div key={`${item.producto.id}-${item.talle}`} className="card p-4">
+              <div className="flex gap-4">
+                {/* Imagen */}
+                <div className="relative w-24 h-24 flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden">
+                  <Image
+                    src={imagenUrl}
+                    alt={item.producto.nombre}
+                    fill
+                    className="object-cover"
+                  />
+                </div>
+
+                {/* Información */}
+                <div className="flex-1">
+                  <Link
+                    href={getProductUrl(item.producto)}
+                    className="font-semibold text-dark hover:text-primary transition-colors line-clamp-2"
+                  >
+                    {item.producto.nombre}
+                  </Link>
+                  <div className="flex items-center gap-4 text-sm text-gray mt-1">
+                    <span>Talle: {item.talle}</span>
+                    {item.color && <span>Color: {item.color}</span>}
+                  </div>
+                  <p className="text-lg font-bold text-dark mt-2">
+                    {formatPrice(item.precioUnitario)}
+                  </p>
+                </div>
+
+                {/* Controles de cantidad */}
+                <div className="flex flex-col items-end justify-between">
+                  <button
+                    onClick={() => removeItem(item.producto.id, item.talle)}
+                    className="text-error hover:bg-error/10 p-2 rounded-lg transition-colors"
+                    aria-label="Eliminar producto"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => updateQuantity(item.producto.id, item.talle, item.cantidad - 1)}
+                      className="w-8 h-8 rounded-lg border-2 border-gray-300 hover:border-primary flex items-center justify-center transition-colors"
+                      disabled={item.cantidad <= 1}
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="w-12 text-center font-medium">{item.cantidad}</span>
+                    <button
+                      onClick={() => updateQuantity(item.producto.id, item.talle, item.cantidad + 1)}
+                      className="w-8 h-8 rounded-lg border-2 border-gray-300 hover:border-primary flex items-center justify-center transition-colors"
+                      disabled={item.cantidad >= item.producto.stock}
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+
+                  <p className="text-lg font-bold text-primary">
+                    {formatPrice(item.precioUnitario * item.cantidad)}
+                  </p>
+                </div>
+              </div>
+            </div>
+            );
+          })}
+
+          {/* Botón Limpiar Carrito */}
+          <button
+            onClick={clearCart}
+            className="text-error hover:underline text-sm flex items-center gap-1"
+          >
+            <Trash2 size={16} />
+            Vaciar carrito
+          </button>
+        </div>
+
+        {/* Columna Derecha: Resumen */}
+        <div className="lg:col-span-1">
+          <div className="card p-6 sticky top-24 space-y-4">
+            <h2 className="text-xl font-bold text-dark">Resumen de Compra</h2>
+
+            {/* Código de Cupón */}
+            <div>
+              <label className="block text-sm font-medium text-dark mb-2">
+                Código de Cupón
+              </label>
+              
+              {/* Cupones exclusivos disponibles */}
+              {isAuthenticated && cuponesDisponibles.length > 0 && (
+                <div className="mb-3">
+                  <button
+                    onClick={() => setMostrarCupones(!mostrarCupones)}
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                  >
+                    <Gift size={14} />
+                    {mostrarCupones ? 'Ocultar' : 'Ver'} tus cupones exclusivos ({cuponesDisponibles.length})
+                  </button>
+                  
+                  {mostrarCupones && (
+                    <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                      {cuponesDisponibles.map((cupon) => (
+                        <div
+                          key={cupon.id}
+                          className="p-2 bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => {
+                            setCodigoCupon(cupon.codigo);
+                            setMostrarCupones(false);
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <p className="text-sm font-bold text-purple-700">{cupon.codigo}</p>
+                              <p className="text-xs text-gray-600">{cupon.descripcion}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-bold text-accent">
+                                {cupon.tipoDescuento === 'PORCENTAJE' 
+                                  ? `${cupon.descuento}%` 
+                                  : formatPrice(cupon.descuento)}
+                              </p>
+                              <p className="text-xs text-gray-500">descuento</p>
+                            </div>
+                          </div>
+                          {cupon.fechaFin && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Válido hasta: {new Date(cupon.fechaFin).toLocaleDateString('es-AR')}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={codigoCupon}
+                  onChange={(e) => setCodigoCupon(e.target.value.toUpperCase())}
+                  placeholder="PASO10"
+                  disabled={!!cuponAplicado}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
+                />
+                {cuponAplicado ? (
+                  <button
+                    onClick={removerCupon}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-1"
+                  >
+                    <Trash2 size={16} />
+                    Quitar
+                  </button>
+                ) : (
+                  <button
+                    onClick={aplicarCupon}
+                    disabled={validandoCupon}
+                    className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors disabled:bg-gray-300 flex items-center gap-1"
+                  >
+                    <Tag size={16} />
+                    {validandoCupon ? 'Validando...' : 'Aplicar'}
+                  </button>
+                )}
+              </div>
+              
+              {cuponAplicado && (
+                <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-700 font-medium">
+                    ✓ Cupón {cuponAplicado.codigo} aplicado
+                  </p>
+                  {cuponAplicado.descripcion && (
+                    <p className="text-xs text-green-600 mt-1">
+                      {cuponAplicado.descripcion}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <hr />
+
+            {/* Detalle de Precios */
+            <div className="space-y-3">
+              <div className="flex justify-between text-gray">
+                <span>Subtotal</span>
+                <span>{formatPrice(subtotal)}</span>
+              </div>
+
+              {cuponAplicado && descuentoCupon > 0 && (
+                <div className="flex justify-between text-success">
+                  <span>
+                    Cupón {cuponAplicado.codigo}
+                    {cuponAplicado.tipoDescuento === 'PORCENTAJE' && ` (${cuponAplicado.descuento}%)`}
+                  </span>
+                  <span>-{formatPrice(descuentoCupon)}</span>
+                </div>
+              )}
+
+              <hr />
+
+              <div className="flex justify-between text-xl font-bold text-dark">
+                <span>Total</span>
+                <span>{formatPrice(total)}</span>
+              </div>
+
+              <p className="text-xs text-gray text-center">
+                💳 Hasta 12 cuotas sin interés de {formatPrice(total / 12)}
+              </p>
+            </div>
+
+            {/* Botones de Acción */}
+            <div className="space-y-3">
+              <Button onClick={procederAlPago} fullWidth size="lg">
+                Proceder al Pago
+                <ChevronRight size={20} />
+              </Button>
+              
+              <Button
+                onClick={() => router.push('/tienda')}
+                variant="outline"
+                fullWidth
+              >
+                Seguir Comprando
+              </Button>
+            </div>
+
+            {/* Información de Envío */}
+            <div className="bg-primary/10 p-4 rounded-lg text-sm">
+              <p className="font-medium text-dark mb-1">🚚 Envío a todo el país</p>
+              <p className="text-gray">
+                Un representante te contactará para coordinar el envío tras confirmar tu pedido.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
