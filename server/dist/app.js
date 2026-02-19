@@ -39,6 +39,7 @@ const logger = pino({
 app.use(helmet());
 // CORS: abierto en desarrollo, restringido en producción a APP_URL
 const allowedOrigins = new Set(env.APP_URL.split(',').map(url => url.trim()));
+const allowedPatterns = [/\.netlify\.app$/, /\.railway\.app$/];
 app.use(cors({
     origin: (origin, callback) => {
         if (!isProd)
@@ -48,7 +49,10 @@ app.use(cors({
             return callback(null, true);
         if (allowedOrigins.has(origin))
             return callback(null, true);
-        // permitir subrutas del mismo host si la URL trae trailing slash o sin slash
+        // Permitir subdominios dinámicos de Netlify y Railway
+        if (allowedPatterns.some(pattern => pattern.test(origin)))
+            return callback(null, true);
+        // permitir subrutas del mismo host
         for (const o of allowedOrigins) {
             if (origin === o || origin.startsWith(o.replace(/\/$/, '')))
                 return callback(null, true);
